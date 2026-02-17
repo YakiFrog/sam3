@@ -602,9 +602,15 @@ class SequenceGeometryEncoder(nn.Module):
             grid = points.transpose(0, 1).unsqueeze(2)
             # re normalize to [-1, 1]
             grid = (grid * 2) - 1
-            sampled = torch.nn.functional.grid_sample(
-                img_feats, grid, align_corners=False
-            )
+            # MPS fallback: grid_sample can crash on MPS with certain tensor shapes
+            if img_feats.device.type == "mps":
+                sampled = torch.nn.functional.grid_sample(
+                    img_feats.cpu(), grid.cpu(), align_corners=False
+                ).to(img_feats.device)
+            else:
+                sampled = torch.nn.functional.grid_sample(
+                    img_feats, grid, align_corners=False
+                )
             assert list(sampled.shape) == [bs, self.d_model, n_points, 1]
             sampled = sampled.squeeze(-1).permute(2, 0, 1)
             proj = self.points_pool_project(sampled)

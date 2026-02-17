@@ -463,6 +463,38 @@ class Attention(nn.Module):
             return q, k
 
         assert self.freqs_cis is not None
+        # SAM3 addition: Handle dynamic resolution change.
+        # If the input sequence length L doesn't match the precomputed freqs_cis,
+        # we recompute (and cache) it for the current resolution.
+        L = q.shape[-2]
+        if self.freqs_cis.shape[0] != L:
+            if not hasattr(self, "_freqs_cis_cache"):
+                self._freqs_cis_cache = {}
+            if L not in self._freqs_cis_cache:
+                s = 1 if self.cls_token else 0
+                H = W = int(math.sqrt(L - s))
+                if H * W == L - s:
+                    scale_pos = self.rope_pt_size[0] / H if self.rope_interp else 1.0
+                    freqs_cis = self.compute_cis(
+                        end_x=H,
+                        end_y=W,
+                        scale_pos=scale_pos,
+                    ).to(q.device)
+                    if self.cls_token:
+                        t = torch.zeros(
+                            self.head_dim // 2,
+                            dtype=torch.float32,
+                            device=freqs_cis.device,
+                        )
+                        cls_freqs_cis = torch.polar(torch.ones_like(t), t)[None, :]
+                        freqs_cis = torch.cat([cls_freqs_cis, freqs_cis], dim=0)
+                    self._freqs_cis_cache[L] = freqs_cis
+                else:
+                    # Fallback to original buffer if not a standard square shape
+                    # This might still error in apply_rotary_enc if shape truly mismatch
+                    return apply_rotary_enc(q, k, freqs_cis=self.freqs_cis)
+            return apply_rotary_enc(q, k, freqs_cis=self._freqs_cis_cache[L])
+
         return apply_rotary_enc(q, k, freqs_cis=self.freqs_cis)
 
     def forward(self, x: Tensor) -> Tensor:
