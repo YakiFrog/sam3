@@ -123,7 +123,11 @@ class SAM3VLBackbone(nn.Module):
         self, captions, input_boxes=None, additional_text=None, device=None
     ):
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+            # Infer device from vision backbone if available
+            try:
+                device = next(self.vision_backbone.parameters()).device
+            except StopIteration:
+                device = "cpu"
         return activation_ckpt_wrapper(self._forward_text_no_ack_ckpt)(
             captions=captions,
             input_boxes=input_boxes,
@@ -140,7 +144,11 @@ class SAM3VLBackbone(nn.Module):
         device=None,
     ):
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+            # Infer device from vision backbone if available
+            try:
+                device = next(self.vision_backbone.parameters()).device
+            except StopIteration:
+                device = "cpu"
         output = {}
 
         # Forward through text_encoder

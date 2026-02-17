@@ -274,12 +274,9 @@ class TransformerDecoder(nn.Module):
 
             if resolution is not None and stride is not None:
                 feat_size = resolution // stride
-                device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
-                coords_h, coords_w = self._get_coords(
-                    feat_size, feat_size, device=device
-                )
-                self.compilable_cord_cache = (coords_h, coords_w)
-                self.compilable_stored_size = (feat_size, feat_size)
+                # Use a dummy tensor to get the model's current device or fallback to CPU
+                # During init, we don't know the final device yet, so we'll handle it in _get_rpb_matrix
+                pass
 
         self.roi_pooler = (
             RoIAlign(output_size=7, spatial_scale=1, sampling_ratio=-1, aligned=True)
@@ -351,6 +348,10 @@ class TransformerDecoder(nn.Module):
 
             assert coords_h.shape == (H,)
             assert coords_w.shape == (W,)
+
+        # Ensure coordinates are on the same device as reference_boxes
+        coords_h = coords_h.to(reference_boxes.device)
+        coords_w = coords_w.to(reference_boxes.device)
 
         deltas_y = coords_h.view(1, -1, 1) - boxes_xyxy.reshape(-1, 1, 4)[:, :, 1:4:2]
         deltas_y = deltas_y.view(bs, num_queries, -1, 2)
